@@ -73,6 +73,8 @@ Preferences 裡的「Enable Accessibility」（輔助使用權限）是給控制
 
 ### 3. 放進 lid-coffee
 
+有 git 的話貼這兩行：
+
 ```bash
 git clone https://github.com/isaac216/lid-coffee.git ~/.hammerspoon/lid-coffee
 printf '\nrequire("lid-coffee")\n' >> ~/.hammerspoon/init.lua
@@ -80,11 +82,12 @@ printf '\nrequire("lid-coffee")\n' >> ~/.hammerspoon/init.lua
 
 第一行把 lid-coffee 下載到 `~/.hammerspoon/lid-coffee/`。第二行在 Hammerspoon 的設定檔 `~/.hammerspoon/init.lua` 最後加一行載入它，檔案不存在會自動建立。
 
-沒有 git 的話（第一次打 `git` 會跳出安裝開發者工具的視窗），第一行換成這兩行，直接下載程式檔：
+沒有 git 的話（第一次打 `git` 會跳出安裝開發者工具的視窗），改貼這三行，直接下載程式檔：
 
 ```bash
 mkdir -p ~/.hammerspoon/lid-coffee
 curl -fsSL https://raw.githubusercontent.com/isaac216/lid-coffee/main/init.lua -o ~/.hammerspoon/lid-coffee/init.lua
+printf '\nrequire("lid-coffee")\n' >> ~/.hammerspoon/init.lua
 ```
 
 接著點選單列的鎚子 → Reload Config。選單列多出 ☕ 或 🥛，就是載入成功。
