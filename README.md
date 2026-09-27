@@ -1,8 +1,10 @@
 # lid-coffee ☕
 
-闔上 MacBook 螢幕後讓程式照跑（Claude Code、下載、編譯），連續闔滿上限時數就自動睡眠。是一個 Hammerspoon 模組，用選單列的 ☕／🥛 圖示切換。
+闔上 MacBook 螢幕後讓程式照跑（Claude Code、下載、編譯），連續闔滿上限時數就自動睡眠。用選單列的 ☕／🥛 圖示切換。
 
-Keep a MacBook running with the lid closed, and put it to sleep after N hours. A Hammerspoon module with a ☕ / 🥛 menu bar toggle.
+Keep a MacBook running with the lid closed, and put it to sleep after N hours. Requires [Hammerspoon](https://www.hammerspoon.org/); adds a ☕ / 🥛 menu bar toggle.
+
+> **要先裝 Hammerspoon。** lid-coffee 是一段 Lua 腳本，本身沒有 App 可以點，要由 Hammerspoon 載入才會跑。Hammerspoon 是免費、開源的 macOS 自動化工具，常駐在選單列，會載入 `~/.hammerspoon/` 裡的腳本。沒用過也可以照著裝，〈安裝〉從裝 Hammerspoon 寫起。
 
 ## 為什麼需要
 
@@ -45,33 +47,75 @@ lid-coffee 補這兩件事：闔上就關內建螢幕，闔滿上限時數就把
 
 ## 安裝
 
-需要 [Hammerspoon](https://www.hammerspoon.org/)。目前在 MacBook Air M3、macOS 26.6、Hammerspoon 1.1.1 上使用。
+需要：
 
-1. clone 進 Hammerspoon 的設定資料夾：
+- MacBook（有螢幕蓋的筆電）
+- Hammerspoon，免費，第 1 步裝
+- 管理者帳號，第 4 步要輸入一次密碼
 
-   ```bash
-   git clone https://github.com/isaac216/lid-coffee.git ~/.hammerspoon/lid-coffee
-   ```
+目前在 MacBook Air M3、macOS 26.6、Hammerspoon 1.1.1 上使用。以下指令都貼到「終端機」（Terminal）執行。
 
-2. `~/.hammerspoon/init.lua`（沒有就新建）加一行，然後點選單列的 Hammerspoon 圖示 → Reload Config：
+### 1. 裝 Hammerspoon
 
-   ```lua
-   require("lid-coffee")
-   ```
+有 [Homebrew](https://brew.sh/) 的話：
 
-3. 讓 `pmset -a disablesleep 0` 與 `1` 這兩條指令不用密碼。沒裝的話，手動切換 ☕／🥛 會跳管理者密碼視窗，闔滿上限的自動睡眠則會失敗（它只用 `sudo -n`）：
+```bash
+brew install --cask hammerspoon
+```
 
-   ```bash
-   tmp=$(mktemp)
-   echo "$(whoami) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1" > "$tmp"
-   visudo -cf "$tmp" && sudo install -m 0440 -o root -g wheel "$tmp" /etc/sudoers.d/pmset-disablesleep
-   rm "$tmp"
-   sudo -k; sudo -n /usr/bin/pmset -a disablesleep 0 && echo OK   # 不問密碼就印 OK
-   ```
+沒有的話，到 [Hammerspoon 官網](https://www.hammerspoon.org/) 下載 zip，解壓後把 `Hammerspoon.app` 拖進「應用程式」資料夾。
 
-   只放行這兩條指令，其他 `sudo` 照樣要密碼。檔名不能含 `.`，sudo 會略過 `/etc/sudoers.d/` 裡檔名帶點的檔。
+### 2. 打開 Hammerspoon，設成開機自動啟動
 
-4. 點選單列的 🥛，選一個時數，變成 ☕ 就好了。
+從「應用程式」打開 Hammerspoon，選單列會多一個鎚子圖示。點它 → Preferences，勾「Launch Hammerspoon at login」。lid-coffee 只在 Hammerspoon 開著時有作用，所以要開機自動啟動。
+
+Preferences 裡的「Enable Accessibility」（輔助使用權限）是給控制鍵盤滑鼠、搬視窗的腳本用的。lid-coffee 沒有這類動作，熱鍵走的是不需要這個權限的系統介面，不開也能用。
+
+### 3. 放進 lid-coffee
+
+```bash
+git clone https://github.com/isaac216/lid-coffee.git ~/.hammerspoon/lid-coffee
+printf '\nrequire("lid-coffee")\n' >> ~/.hammerspoon/init.lua
+```
+
+第一行把 lid-coffee 下載到 `~/.hammerspoon/lid-coffee/`。第二行在 Hammerspoon 的設定檔 `~/.hammerspoon/init.lua` 最後加一行載入它，檔案不存在會自動建立。
+
+沒有 git 的話（第一次打 `git` 會跳出安裝開發者工具的視窗），第一行換成這兩行，直接下載程式檔：
+
+```bash
+mkdir -p ~/.hammerspoon/lid-coffee
+curl -fsSL https://raw.githubusercontent.com/isaac216/lid-coffee/main/init.lua -o ~/.hammerspoon/lid-coffee/init.lua
+```
+
+接著點選單列的鎚子 → Reload Config。選單列多出 ☕ 或 🥛，就是載入成功。
+
+有兩個 `init.lua`，別搞混：`~/.hammerspoon/init.lua` 是 Hammerspoon 的設定檔，只加上面那一行；`~/.hammerspoon/lid-coffee/init.lua` 是 lid-coffee 本身。
+
+### 4. 設定免密碼
+
+讓 `pmset -a disablesleep 0` 與 `1` 這兩條指令不用密碼。沒設的話，手動切換 ☕／🥛 會跳管理者密碼視窗，闔滿上限的自動睡眠則會失敗：它只用 `sudo -n`，闔著時沒人能輸入密碼。
+
+```bash
+tmp=$(mktemp)
+echo "$(whoami) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1" > "$tmp"
+visudo -cf "$tmp" && sudo install -m 0440 -o root -g wheel "$tmp" /etc/sudoers.d/pmset-disablesleep
+rm "$tmp"
+sudo -k; sudo -n /usr/bin/pmset -a disablesleep 0 && echo OK   # 不問密碼就印 OK
+```
+
+`sudo install` 那行會問一次密碼。只放行這兩條指令，其他 `sudo` 照樣要密碼。檔名不能含 `.`，sudo 會略過 `/etc/sudoers.d/` 裡檔名帶點的檔。
+
+### 5. 開始用
+
+點選單列的 🥛，選一個時數，變成 ☕ 就好了。之後闔上螢幕，程式照跑，到上限時數自動睡眠。
+
+### 更新
+
+```bash
+git -C ~/.hammerspoon/lid-coffee pull
+```
+
+用 curl 裝的，重跑一次上面 `curl` 那行。更新完 Reload Config。
 
 ## 設定
 
@@ -92,6 +136,8 @@ defaults read org.hammerspoon.Hammerspoon lidMaxHours
 ```
 
 ## 確認有沒有在跑
+
+選單列沒出現 ☕／🥛：點鎚子 → Console，看有沒有紅字。最常見的是資料夾放錯，`~/.hammerspoon/lid-coffee/init.lua` 要存在；從 GitHub 下載 ZIP 解壓出來的資料夾叫 `lid-coffee-main`，要改名成 `lid-coffee`。
 
 ```bash
 pmset -g | grep SleepDisabled                    # 1 = ☕；從沒設過時這行不會出現
@@ -122,4 +168,8 @@ sudo rm /etc/sudoers.d/pmset-disablesleep
 rm -rf ~/.hammerspoon/lid-coffee
 ```
 
-最後拿掉 `init.lua` 的 `require("lid-coffee")`，Reload Config。
+最後拿掉 `~/.hammerspoon/init.lua` 裡的 `require("lid-coffee")`，Reload Config。不再用 Hammerspoon 的話，把它從「應用程式」刪掉。
+
+## 授權
+
+MIT，見 [LICENSE](LICENSE)。
