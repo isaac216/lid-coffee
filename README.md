@@ -1,8 +1,8 @@
 # lid-coffee ☕
 
-闔上 MacBook 螢幕後讓程式照跑（Claude Code、下載、編譯），連續闔滿上限時數就自動睡眠。用選單列的 ☕／🥛 圖示切換。
+闔上 MacBook 螢幕後讓程式照跑（Claude Code、下載、編譯），闔上就鎖定、開蓋要 Touch ID，連續闔滿上限時數就自動睡眠。用選單列的 ☕／🥛 圖示切換。
 
-Keep a MacBook running with the lid closed, and put it to sleep after N hours. Requires [Hammerspoon](https://www.hammerspoon.org/); adds a ☕ / 🥛 menu bar toggle.
+Keep a MacBook running with the lid closed, lock the screen on close, and put it to sleep after N hours. Requires [Hammerspoon](https://www.hammerspoon.org/); adds a ☕ / 🥛 menu bar toggle.
 
 > **要先裝 Hammerspoon。** lid-coffee 是一段 Lua 腳本，本身沒有 App 可以點，要由 Hammerspoon 載入才會跑。Hammerspoon 是免費、開源的 macOS 自動化工具，常駐在選單列，會載入 `~/.hammerspoon/` 裡的腳本。沒用過也可以照著裝，〈安裝〉從裝 Hammerspoon 寫起。
 
@@ -14,9 +14,9 @@ MacBook 闔上螢幕觸發的是 Clamshell Sleep，跟閒置睡眠分開算。`p
 sudo pmset -a disablesleep 1
 ```
 
-只開這個會有兩個問題。闔上後內建螢幕還亮著，要等 `displaysleep` 的閒置計時器才熄；開了也不會自己關，忘了切回來，機器放進包包會一路跑到沒電。
+只開這個會有兩個問題。闔上後內建螢幕還亮著、也沒鎖定，要等 `displaysleep` 的閒置計時器熄了才鎖，這段時間打開不用密碼；開了也不會自己關，忘了切回來，機器放進包包會一路跑到沒電。
 
-lid-coffee 補這兩件事：闔上就關內建螢幕，闔滿上限時數就把 `disablesleep` 關回 0 並睡眠。
+lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕，闔滿上限時數就把 `disablesleep` 關回 0 並睡眠。
 
 ## 怎麼用
 
@@ -32,16 +32,17 @@ lid-coffee 補這兩件事：闔上就關內建螢幕，闔滿上限時數就把
 
 ## 闔上之後做什麼
 
-每 30 秒查一次蓋子（`ioreg` 的 `AppleClamshellState`，一次約 1 ms CPU）。macOS 沒有闔上螢幕的事件可以訂閱，只能輪詢。查到闔上：
+每 5 秒查一次蓋子（`ioreg` 的 `AppleClamshellState`，一次約 10 ms CPU）。macOS 沒有闔上螢幕的事件可以訂閱，只能輪詢。查到闔上：
 
-1. 內建螢幕還亮著，就 `pmset displaysleepnow`。所以闔上後螢幕最多亮 30 秒
-2. 從第一次查到闔上起算，連續闔滿上限時數，就 `sudo -n pmset -a disablesleep 0`（變 🥛），3 秒後睡眠。醒來開蓋會跳 10 秒提示，還要闔上照跑就自己切回 ☕
+1. 這次闔上還沒鎖過，就 `hs.caffeinate.lockScreen()`，開蓋要 Touch ID 或密碼。程式照跑。不靠系統設定裡「關螢幕後多久要密碼」，那個設定是幾分鐘也照鎖
+2. 內建螢幕還亮著，就 `pmset displaysleepnow`。所以闔上到鎖定、螢幕熄掉最多 5 秒，這段時間內打開不用 Touch ID
+3. 從第一次查到闔上起算，連續闔滿上限時數，就 `sudo -n pmset -a disablesleep 0`（變 🥛），3 秒後睡眠。醒來開蓋會跳 10 秒提示，還要闔上照跑就自己切回 ☕
 
 其他規則：
 
 - 開蓋就重新計時
 - ☕、🥛 都會查。`disablesleep` 若在闔著時才被關掉，macOS 會不會自己補睡沒實測過，所以由 lid-coffee 補送睡眠
-- 接著外接螢幕時不動作也不計時。外接螢幕加闔上是正常的外接模式，`displaysleepnow` 會連外接那台一起關掉
+- 接著外接螢幕時不鎖定、不關螢幕也不計時。外接螢幕加闔上是正常的外接模式，`displaysleepnow` 會連外接那台一起關掉
 - 自動睡眠只用 `sudo -n`，不跳密碼視窗，因為闔著沒人能輸入，視窗會一直卡住 Hammerspoon。沒睡成就 30 秒後重試
 - 睡著後會不定時短暫醒來（`pmset -g log` 裡的 DarkWake），這段期間交給系統，不再送睡眠
 
@@ -128,7 +129,7 @@ git -C ~/.hammerspoon/lid-coffee pull
 |---|---|---|
 | `LID_HOUR_CHOICES` | `{ 0.5, 1, 2, 3, 4, 6, 8, 12 }` | 選單可選的上限時數 |
 | `LID_DEFAULT_HOURS` | `4` | 沒選過時的上限 |
-| `LID_POLL_SECONDS` | `30` | 多久查一次蓋子，也是闔上後螢幕最多亮多久 |
+| `LID_POLL_SECONDS` | `5` | 多久查一次蓋子，也是闔上到鎖定、螢幕熄掉最多多久 |
 
 熱鍵在 `hs.hotkey.bind({"cmd", "ctrl"}, "l", ...)` 那行改。
 
@@ -148,7 +149,7 @@ cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、計時�
 pmset -g log | grep 'Entering Sleep' | tail -3   # 一次要跑幾秒
 ```
 
-每次載入後約 30 秒，`~/.hammerspoon/last-load.txt` 會多一行「闔上計時器第一輪：蓋子開著」，有這行才算計時器真的在跑。
+每次載入後約 5 秒，`~/.hammerspoon/last-load.txt` 會多一行「闔上計時器第一輪：蓋子開著」，有這行才算計時器真的在跑。
 
 自動睡眠有觸發時，`lid-timeout.log` 會記一行，例如「闔上 4.0 小時（上限 4 小時），第 1 次送睡眠。disablesleep 0：成功」，`pmset -g log` 隨後有 `Software Sleep pid=<Hammerspoon 的 pid>`（`pgrep -x Hammerspoon`）。
 
@@ -158,7 +159,8 @@ pmset -g log | grep 'Entering Sleep' | tail -3   # 一次要跑幾秒
 
 - MacBook Air 沒有風扇。☕ 時放進包包，機器會悶著跑到上限時數才睡。收包前按 `Cmd+Ctrl+L` 切成 🥛；手上的工作還要跑完，就選短的上限
 - 用電池時會一路跑到上限時數或沒電
-- 自動睡眠要 Hammerspoon 在跑。Hammerspoon 沒開，`disablesleep` 也不會自己關
+- 開蓋用 Touch ID 解鎖，要在系統設定的「Touch ID 與密碼」打開解鎖 Mac。重開機後第一次解鎖、或隔太久沒輸入密碼，macOS 會改要密碼
+- 鎖定與自動睡眠都要 Hammerspoon 在跑。Hammerspoon 沒開，闔上不會鎖（要等螢幕閒置熄掉），`disablesleep` 也不會自己關
 - 闔著時 Hammerspoon 重新載入設定，計時從頭算
 - 內建螢幕靠名稱認，比對「內建」或「Built-in」。系統是其他語言時，把 `hs.screen.allScreens()` 看到的內建螢幕名稱加進 `onlyBuiltinScreens()`，不然會一直當成接著外接螢幕，什麼都不做
 
