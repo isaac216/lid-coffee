@@ -8,7 +8,7 @@ local M = {}
 
 -- ── 闔上螢幕：鎖定、關內建螢幕；連續闔滿上限時數強制睡眠 ──
 -- 搭配 `sudo pmset -a disablesleep 1`：那個設定讓闔上螢幕不睡眠、程式照跑，但內建螢幕會繼續亮著，也不會鎖定。
--- macOS 沒有「闔上螢幕」的事件可以訂閱，只能每 5 秒查一次 ioreg 的 AppleClamshellState（一次約 10 ms CPU）。
+-- macOS 沒有「闔上螢幕」的事件可以訂閱，只能每 30 秒查一次 ioreg 的 AppleClamshellState（一次約 10 ms CPU）。
 -- 間隔就是闔上到鎖定最多多久：這段時間內再打開，不用 Touch ID。
 -- 查到闔上：
 --   1. 這次闔上還沒鎖過就 hs.caffeinate.lockScreen()，開蓋要 Touch ID 或密碼。
@@ -20,8 +20,7 @@ local M = {}
 -- pmset 的 sleep 設 0 的機器閒置也不會睡，所以由這裡補送睡眠。
 -- 有外接螢幕時不鎖、不關螢幕也不計時：外接螢幕加闔上是正常的外接模式，displaysleepnow 會連外接那台一起關掉。
 -- 逾時送睡眠、計時器出錯才寫 lid-timeout.log，平常不寫。
-local LID_POLL_SECONDS = 5
-local LID_SLEEP_RETRY_SECONDS = 30   -- 逾時送了睡眠沒睡成，隔多久再送。送出到睡著約 30 秒，比這短會在睡著前重複送
+local LID_POLL_SECONDS = 30   -- 也是逾時送了睡眠沒睡成時的重試間隔。送出到睡著約 30 秒，改短會在睡著前重複送睡眠
 local LID_HOUR_CHOICES = { 0.5, 1, 2, 3, 4, 6, 8, 12 }   -- 選單列可選的上限時數，要別的時數改這裡
 local LID_DEFAULT_HOURS = 4
 local LID_LOG = os.getenv("HOME") .. "/.hammerspoon/lid-timeout.log"
@@ -64,13 +63,12 @@ end
 local lidDisplayAsleep = false
 local lidClosedSince = nil      -- 第一次查到闔上的時間（os.time）
 local lidTimeoutTries = 0       -- 這次闔上逾時後送過幾次睡眠
-local lidLastSleepTry = 0       -- 上次送睡眠的時間（os.time）
 local lidLockSent = false       -- 這次闔上已經送過鎖定
 local lidSystemSlept = false    -- 睡著後到下次完整醒來之間為 true。這段期間的短暫醒來（DarkWake）交給系統，不再送睡眠
 local lidTimeoutSlept = false   -- 逾時送的睡眠真的睡了，開蓋後提示一次
 
 local function lidResetCount()
-  lidClosedSince, lidTimeoutTries, lidLastSleepTry, lidLockSent = nil, 0, 0, false
+  lidClosedSince, lidTimeoutTries, lidLockSent = nil, 0, false
 end
 
 M.lidScreenWatcher = hs.caffeinate.watcher.new(function(event)
@@ -93,10 +91,9 @@ end):start()
 
 -- 逾時：先關 disablesleep（開著時睡眠指令會被擋），3 秒後睡眠。
 -- 只用 sudo -n，不退回密碼視窗：闔著沒人能輸入，視窗會一直卡住 Hammerspoon。
--- 沒睡成（sudo 失敗、睡眠被擋）就收不到 systemWillSleep，LID_SLEEP_RETRY_SECONDS 後重試；log 只記前 5 次。
+-- 沒睡成（sudo 失敗、睡眠被擋）就收不到 systemWillSleep，下一輪自動重試；log 只記前 5 次。
 local function lidTimeoutSleep()
   lidTimeoutTries = lidTimeoutTries + 1
-  lidLastSleepTry = os.time()
   local _, ok = hs.execute("/usr/bin/sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null")
   if lidTimeoutTries <= 5 then
     lidLog(string.format("闔上 %.1f 小時（上限 %s），第 %d 次送睡眠。disablesleep 0：%s",
@@ -128,8 +125,7 @@ local function lidTick()
     hs.execute("/usr/bin/pmset displaysleepnow")
     lidDisplayAsleep = true   -- 螢幕本來就睡著時不會再送 screensDidSleep，自己標記；醒來由 screensDidWake 改回
   end
-  if not lidSystemSlept and os.time() - lidClosedSince >= lidMaxHours * 3600
-      and os.time() - lidLastSleepTry >= LID_SLEEP_RETRY_SECONDS then
+  if not lidSystemSlept and os.time() - lidClosedSince >= lidMaxHours * 3600 then
     lidTimeoutSleep()
   end
   return "蓋子闔著"

@@ -32,10 +32,10 @@ lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕，闔滿上限時
 
 ## 闔上之後做什麼
 
-每 5 秒查一次蓋子（`ioreg` 的 `AppleClamshellState`，一次約 10 ms CPU）。macOS 沒有闔上螢幕的事件可以訂閱，只能輪詢。查到闔上：
+每 30 秒查一次蓋子（`ioreg` 的 `AppleClamshellState`，一次約 10 ms CPU）。macOS 沒有闔上螢幕的事件可以訂閱，只能輪詢。查到闔上：
 
 1. 這次闔上還沒鎖過，就 `hs.caffeinate.lockScreen()`，開蓋要 Touch ID 或密碼。程式照跑。不靠系統設定裡「關螢幕後多久要密碼」，那個設定是幾分鐘也照鎖
-2. 內建螢幕還亮著，就 `pmset displaysleepnow`。所以闔上到鎖定、螢幕熄掉最多 5 秒，這段時間內打開不用 Touch ID
+2. 內建螢幕還亮著，就 `pmset displaysleepnow`。所以闔上到鎖定、螢幕熄掉最多 30 秒，這段時間內打開不用 Touch ID
 3. 從第一次查到闔上起算，連續闔滿上限時數，就 `sudo -n pmset -a disablesleep 0`（變 🥛），3 秒後睡眠。醒來開蓋會跳 10 秒提示，還要闔上照跑就自己切回 ☕
 
 其他規則：
@@ -129,7 +129,7 @@ git -C ~/.hammerspoon/lid-coffee pull
 |---|---|---|
 | `LID_HOUR_CHOICES` | `{ 0.5, 1, 2, 3, 4, 6, 8, 12 }` | 選單可選的上限時數 |
 | `LID_DEFAULT_HOURS` | `4` | 沒選過時的上限 |
-| `LID_POLL_SECONDS` | `5` | 多久查一次蓋子，也是闔上到鎖定、螢幕熄掉最多多久 |
+| `LID_POLL_SECONDS` | `30` | 多久查一次蓋子，也是闔上到鎖定、螢幕熄掉最多多久。自動睡眠沒睡成時也隔這麼久重試；送出到睡著約 30 秒，改短會在睡著前重複送 |
 
 熱鍵在 `hs.hotkey.bind({"cmd", "ctrl"}, "l", ...)` 那行改。
 
@@ -149,7 +149,7 @@ cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、計時�
 pmset -g log | grep 'Entering Sleep' | tail -3   # 一次要跑幾秒
 ```
 
-每次載入後約 5 秒，`~/.hammerspoon/last-load.txt` 會多一行「闔上計時器第一輪：蓋子開著」，有這行才算計時器真的在跑。
+每次載入後約 30 秒，`~/.hammerspoon/last-load.txt` 會多一行「闔上計時器第一輪：蓋子開著」，有這行才算計時器真的在跑。
 
 自動睡眠有觸發時，`lid-timeout.log` 會記一行，例如「闔上 4.0 小時（上限 4 小時），第 1 次送睡眠。disablesleep 0：成功」，`pmset -g log` 隨後有 `Software Sleep pid=<Hammerspoon 的 pid>`（`pgrep -x Hammerspoon`）。
 
