@@ -15,14 +15,15 @@ local M = {}
 --      不靠系統「關螢幕後多久要密碼」的設定，那個設定改成幾分鐘也照鎖。鎖定不影響程式執行。
 --   2. 螢幕還亮著就 pmset displaysleepnow。
 --   3. 防呆：從第一次查到闔上起算滿上限時數，就關掉 disablesleep（變 🥛）再睡眠，不管原本是 ☕ 還是 🥛。開蓋重新計時。
--- 上限時數在選單列 ☕ 的選單選（見下一段），存在 hs.settings 的 lidMaxHours，重新載入、重開機都還在；沒選過是 4 小時。
+--      睡著後開蓋就切回 ☕、上限改回 LID_DEFAULT_HOURS（lidBackToCoffee），不停在 🥛。
+-- 上限時數在選單列 ☕ 的選單選（見下一段），存在 hs.settings 的 lidMaxHours，重新載入、重開機都還在；沒選過是 2 小時。
 -- ☕、🥛 都跑：disablesleep 若在闔著時才被關掉（終端機或 agent 下的 pmset），macOS 會不會自己補睡沒實測過；
 -- pmset 的 sleep 設 0 的機器閒置也不會睡，所以由這裡補送睡眠。
 -- 有外接螢幕時不鎖、不關螢幕也不計時：外接螢幕加闔上是正常的外接模式，displaysleepnow 會連外接那台一起關掉。
--- 逾時送睡眠、計時器出錯才寫 lid-timeout.log，平常不寫。
+-- 逾時送睡眠、之後開蓋切回 ☕、計時器出錯才寫 lid-timeout.log，平常不寫。
 local LID_POLL_SECONDS = 30   -- 也是逾時送了睡眠沒睡成時的重試間隔。送出到睡著約 30 秒，改短會在睡著前重複送睡眠
 local LID_HOUR_CHOICES = { 0.5, 1, 2, 3, 4, 6, 8, 12 }   -- 選單列可選的上限時數，要別的時數改這裡
-local LID_DEFAULT_HOURS = 4
+local LID_DEFAULT_HOURS = 2   -- 沒選過時的上限，也是逾時睡眠後開蓋切回 ☕ 的上限
 local LID_LOG = os.getenv("HOME") .. "/.hammerspoon/lid-timeout.log"
 
 -- hs.settings 存的值不在 LID_HOUR_CHOICES 裡（沒選過，或清單改過）就用預設
@@ -65,7 +66,8 @@ local lidClosedSince = nil      -- 第一次查到闔上的時間（os.time）
 local lidTimeoutTries = 0       -- 這次闔上逾時後送過幾次睡眠
 local lidLockSent = false       -- 這次闔上已經送過鎖定
 local lidSystemSlept = false    -- 睡著後到下次完整醒來之間為 true。這段期間的短暫醒來（DarkWake）交給系統，不再送睡眠
-local lidTimeoutSlept = false   -- 逾時送的睡眠真的睡了，開蓋後提示一次
+local lidTimeoutSlept = false   -- 逾時送的睡眠真的睡了，開蓋後切回 ☕ 並提示一次
+local lidBackToCoffee           -- 開蓋後切回 ☕ 的函式，定義在下一段（要更新選單列圖示）
 
 local function lidResetCount()
   lidClosedSince, lidTimeoutTries, lidLockSent = nil, 0, false
@@ -79,7 +81,7 @@ M.lidScreenWatcher = hs.caffeinate.watcher.new(function(event)
     lidDisplayAsleep = false
     if lidTimeoutSlept then
       lidTimeoutSlept = false
-      hs.alert.show(string.format("闔上滿 %s，剛才自動睡眠，已切成 🥛", lidHoursText(lidMaxHours)), 10)
+      lidBackToCoffee()
     end
   elseif event == w.systemWillSleep then
     lidSystemSlept = true
@@ -191,6 +193,20 @@ local function setLidHours(h)
   lidMaxHours = h
   hs.settings.set("lidMaxHours", h)
   setNoSleep(true)
+end
+
+-- 闔滿上限睡著後開蓋：切回 ☕、上限改回 LID_DEFAULT_HOURS 並存進 hs.settings，之後照常，直到從選單或熱鍵再改。
+-- 只用 sudo -n：開蓋時還在鎖定畫面，密碼視窗會卡住 Hammerspoon。沒切成就留在 🥛，提示裡講。
+lidBackToCoffee = function()
+  local slept = lidHoursText(lidMaxHours)
+  lidMaxHours = LID_DEFAULT_HOURS
+  hs.settings.set("lidMaxHours", lidMaxHours)
+  hs.execute("/usr/bin/sudo -n /usr/bin/pmset -a disablesleep 1 2>/dev/null")
+  local on = noSleepOn()
+  showNoSleepState(on)
+  lidLog(string.format("開蓋，切回 ☕（上限 %s）：%s", lidHoursText(lidMaxHours), on and "成功" or "失敗（sudo -n）"))
+  hs.alert.show(string.format("闔上滿 %s，剛才自動睡眠；", slept)
+    .. (on and string.format("已切回 ☕（最多 %s）", lidHoursText(lidMaxHours)) or "切回 ☕ 失敗（sudo -n），現在是 🥛"), 10)
 end
 
 -- 每次點圖示都重建選單，打勾跟著當下狀態走

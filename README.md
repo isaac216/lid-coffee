@@ -24,9 +24,10 @@ lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕，闔滿上限時
 |---|---|
 | 選單列顯示 ☕ | 闔上照跑（`disablesleep 1`），到上限時數為止 |
 | 選單列顯示 🥛 | 闔上就睡，正常休息（`disablesleep 0`） |
-| 點圖示，選一個時數 | 上限改成那個時數，並切成 ☕。可選 30 分鐘、1、2、3、4、6、8、12 小時，沒選過是 4 小時 |
+| 點圖示，選一個時數 | 上限改成那個時數，並切成 ☕。可選 30 分鐘、1、2、3、4、6、8、12 小時，沒選過是 2 小時 |
 | 點圖示，選「🥛 闔上就睡」 | 切回正常睡眠 |
 | `Cmd+Ctrl+L` | 直接切換 ☕／🥛，上限沿用最後一次選的 |
+| 闔滿上限自動睡眠後，開蓋 | 自動切回 ☕，上限改回 2 小時，之後照這個設定，直到再改 |
 
 在終端機直接下 `pmset` 改的，60 秒內會同步到圖示。
 
@@ -36,7 +37,7 @@ lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕，闔滿上限時
 
 1. 這次闔上還沒鎖過，就 `hs.caffeinate.lockScreen()`，開蓋要 Touch ID 或密碼。程式照跑。不靠系統設定裡「關螢幕後多久要密碼」，那個設定是幾分鐘也照鎖
 2. 內建螢幕還亮著，就 `pmset displaysleepnow`。所以闔上到鎖定、螢幕熄掉最多 30 秒，這段時間內打開不用 Touch ID
-3. 從第一次查到闔上起算，連續闔滿上限時數，就 `sudo -n pmset -a disablesleep 0`（變 🥛），3 秒後睡眠。醒來開蓋會跳 10 秒提示，還要闔上照跑就自己切回 ☕
+3. 從第一次查到闔上起算，連續闔滿上限時數，就 `sudo -n pmset -a disablesleep 0`（變 🥛），3 秒後睡眠。醒來開蓋自動切回 ☕、上限改回 2 小時（`LID_DEFAULT_HOURS`），跳 10 秒提示；要闔上就睡，自己切成 🥛。切回 ☕ 一樣只用 `sudo -n`，沒切成就留在 🥛，提示裡會講
 
 其他規則：
 
@@ -128,12 +129,12 @@ git -C ~/.hammerspoon/lid-coffee pull
 | 常數 | 預設 | 意思 |
 |---|---|---|
 | `LID_HOUR_CHOICES` | `{ 0.5, 1, 2, 3, 4, 6, 8, 12 }` | 選單可選的上限時數 |
-| `LID_DEFAULT_HOURS` | `4` | 沒選過時的上限 |
+| `LID_DEFAULT_HOURS` | `2` | 沒選過時的上限，也是闔滿上限睡著後開蓋切回 ☕ 的上限 |
 | `LID_POLL_SECONDS` | `30` | 多久查一次蓋子，也是闔上到鎖定、螢幕熄掉最多多久。自動睡眠沒睡成時也隔這麼久重試；送出到睡著約 30 秒，改短會在睡著前重複送 |
 
 熱鍵在 `hs.hotkey.bind({"cmd", "ctrl"}, "l", ...)` 那行改。
 
-選過的上限存在 `hs.settings` 的 `lidMaxHours`，Reload、重開機都還在。查目前的上限：
+選過的上限存在 `hs.settings` 的 `lidMaxHours`，Reload、重開機都還在；闔滿上限睡著後開蓋，會改回 `LID_DEFAULT_HOURS`。查目前的上限：
 
 ```bash
 defaults read org.hammerspoon.Hammerspoon lidMaxHours
@@ -145,13 +146,13 @@ defaults read org.hammerspoon.Hammerspoon lidMaxHours
 
 ```bash
 pmset -g | grep SleepDisabled                    # 1 = ☕；從沒設過時這行不會出現
-cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、計時器出錯時寫
+cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、之後開蓋切回 ☕、計時器出錯時寫
 pmset -g log | grep 'Entering Sleep' | tail -3   # 一次要跑幾秒
 ```
 
 每次載入後約 30 秒，`~/.hammerspoon/last-load.txt` 會多一行「闔上計時器第一輪：蓋子開著」，有這行才算計時器真的在跑。
 
-自動睡眠有觸發時，`lid-timeout.log` 會記一行，例如「闔上 4.0 小時（上限 4 小時），第 1 次送睡眠。disablesleep 0：成功」，`pmset -g log` 隨後有 `Software Sleep pid=<Hammerspoon 的 pid>`（`pgrep -x Hammerspoon`）。
+自動睡眠有觸發時，`lid-timeout.log` 會記一行，例如「闔上 2.0 小時（上限 2 小時），第 1 次送睡眠。disablesleep 0：成功」，`pmset -g log` 隨後有 `Software Sleep pid=<Hammerspoon 的 pid>`（`pgrep -x Hammerspoon`）。開蓋後會再記一行「開蓋，切回 ☕（上限 2 小時）：成功」。
 
 要短時間測自動睡眠：在 `LID_HOUR_CHOICES` 暫加 `0.05`（選單顯示 3 分鐘）並選它，闔上 5 分鐘再打開，測完拿掉、選回原本的時數。
 
