@@ -24,7 +24,7 @@ lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕；Claude Code 閒
 |---|---|
 | 選單列顯示 ☕ | 闔上照跑（`disablesleep 1`），到上限為止 |
 | 選單列顯示 🥛 | 闔上就睡，正常休息（`disablesleep 0`） |
-| 點圖示，選「☕ Claude 智慧感應」 | 預設。闔著時有 Claude Code session 在跑就照跑，不限時數；連續 10 分鐘沒有就睡。並切成 ☕（見〈Claude 智慧感應〉） |
+| 點圖示，選「☕ Claude 智慧感應」 | 預設。闔著時有 Claude Code session 在跑就照跑（背景 subagent 還在跑也算），不限時數；連續 10 分鐘沒有就睡。並切成 ☕（見〈Claude 智慧感應〉） |
 | 點圖示，選一個時數 | 不看 Claude Code，上限改成那個時數，並切成 ☕。可選 30 分鐘、1、2、3、4、6、8、12 小時 |
 | 點圖示，選「🥛 闔上就睡」 | 切回正常睡眠 |
 | `Cmd+Ctrl+L` | 直接切換 ☕／🥛，上限沿用最後一次選的 |
@@ -50,29 +50,43 @@ lid-coffee 補這兩件事：闔上就鎖定並關內建螢幕；Claude Code 閒
 
 ### Claude 智慧感應
 
-預設的睡眠條件。闔著時每 30 秒讀一次 Claude Code 自己寫的狀態簿 `~/.claude/sessions/<pid>.json`（每個 Claude Code 程序一個檔，程序結束就刪掉），有任何一個 `status` 是 `busy`、而且那個 pid 還在，就算有 session 在跑。從闔上當下起，連續 10 分鐘沒有就睡；有就一直跑，不限時數。
+預設的睡眠條件。闔著時每 30 秒讀一次 Claude Code 自己寫的狀態簿 `~/.claude/sessions/<pid>.json`（每個 Claude Code 程序一個檔，程序結束就刪掉），有任何一個 `status` 是 `busy`、那個 pid 還在、而且最近 30 分鐘有寫入（見下面的上限），就算有 session 在跑。從闔上當下起，連續 10 分鐘沒有就睡；有就一直跑，不限時數。
 
-`status` 怎麼寫，Claude Code 2.1.308 的程式碼裡是：
+`status` 怎麼寫，Claude Code 2.1.310 的程式碼與實測：
 
 | status | 什麼時候 | 智慧感應 |
 |---|---|---|
-| `busy` | 回合中（模型在想、在回、在跑工具），或委派的 subagent 還在跑 | 算在跑 |
+| `busy` | 回合中（模型在想、在回、在跑工具），或委派的工作還在跑：subagent（含 `run_in_background` 的背景 subagent）、Workflow、teammate。主回合結束、只剩背景 subagent 時也是 `busy`，subagent 結束才變 `idle` | 算在跑 |
 | `waiting` | 等你回答：核准權限、回答提問 | 不算，闔著沒人回答 |
-| `shell` | 回合結束，只剩背景指令（dev server、監看迴圈這類可能一直不結束） | 不算 |
+| `shell` | 只有終端機互動 `claude` 會寫：回合結束，只剩背景指令（dev server、監看迴圈這類可能一直不結束）。Cursor／VS Code 擴充與 `claude -p` 這時寫 `idle` | 不算 |
 | `idle` | 閒置 | 不算 |
 
-只看狀態簿，不看網路流量、程序在不在這類間接訊號：那些會被沒有產值的活動（閒置連線、忘了關的背景程序）誤報，讓機器一直不睡。
+背景指令裡跑的 `claude -p` 自己會登記一個檔，照它自己的 `status` 算。
 
-實測會寫狀態簿的啟動方式：Cursor／VS Code 擴充（`entrypoint` 是 `claude-vscode`）、終端機互動 `claude`（`cli`）、`claude -p`（`sdk-cli`）。官方 CHANGELOG 叫它 session registry，但沒有寫成文件，改版可能換格式。為了知道有沒有漏，下面兩種情況各在 `lid-timeout.log` 記一次，不影響睡不睡：
+上限：狀態簿沒有心跳（`updatedAt` 只在 status 改變時更新），卡住的 session 會一直是 `busy`。所以 `busy` 還要這個 session 最近 30 分鐘（`LID_CLAUDE_STALE_MINUTES`）有寫入才算，看這三處的修改時間：
+
+- 主 transcript `~/.claude/projects/<專案>/<sessionId>.jsonl`
+- `~/.claude/projects/<專案>/<sessionId>/` 底下的檔：各 subagent 與 Workflow agent 的 jsonl、工具輸出
+- 背景指令的輸出檔 `/private/tmp/claude-<uid>/<專案>/<sessionId>/tasks/*.output`
+
+都沒寫就當成卡住、不算。卡住的 session 最多讓機器多醒 30 分鐘，再加閒置的 10 分鐘才睡。找不到 transcript（例如用 `--no-session-persistence` 跑的）就照狀態簿算。
+
+寫入時間只拿來當上限，不拿來當「在跑」的證據：網路流量、程序在不在、輸出檔有沒有在寫這類間接訊號，會被沒有產值的活動（閒置連線、忘了關的背景程序）誤報，讓機器一直不睡。
+
+實測會寫狀態簿的啟動方式：Cursor／VS Code 擴充（`entrypoint` 是 `claude-vscode`）、終端機互動 `claude`（`cli`）、`claude -p`（`sdk-cli`；從擴充裡的指令啟動的沿用 `claude-vscode`）。官方 CHANGELOG 叫它 session registry，但沒有寫成文件，改版可能換格式；官方給腳本用的指令 `claude agents --json` 印的也是這份狀態簿的 pid、sessionId、status。為了知道有沒有漏，下面幾種情況各在 `lid-timeout.log` 記一次，不影響睡不睡：
 
 - 狀態簿有檔，卻讀不出 pid（格式可能改了）：這時一律當閒置，寧可睡
 - 有叫 `claude` 的程序沒登記：Claude in Chrome 的 MCP（`--claude-in-chrome-mcp`）、`claude mcp serve` 這類不是 session 的輔助程序不記
+- `busy` 的 session 卡住（30 分鐘沒寫入），或找不到它的 transcript
 
-別人的做法：[caffeinate-claude](https://github.com/bmoeskau/caffeinate-claude) 這類工具用 Claude Code 的 hook（`UserPromptSubmit` 開、`Stop` 關）自己記狀態，預設 1 小時逾時。Claude Code 自己已經記了，lid-coffee 直接讀，不用改 hook 設定。
+要看智慧感應現在怎麼判斷每個 session，在 Hammerspoon 的 Console 打 `require("lid-coffee").statusLines()[4]`，蓋子開著也照算。
+
+別人的做法：[caffeinate-claude](https://github.com/bmoeskau/caffeinate-claude) 這類工具用 Claude Code 的 hook（`UserPromptSubmit` 開、`Stop` 關）自己記狀態，預設 1 小時逾時。Claude Code 自己已經記了，也有 `SubagentStart`、`SubagentStop` 這類 hook，但程序被強制結束時不會送出結束的 hook，lid-coffee 直接讀狀態簿，不用改 hook 設定。
 
 限制：
 
-- 回合結束後只剩背景指令（`shell`）不算在跑：有產值的背景建置也會在 10 分鐘後跟著睡眠暫停，開蓋繼續
+- 回合結束後只剩背景指令不算在跑（終端機是 `shell`，擴充是 `idle`）：有產值的背景建置也會在 10 分鐘後跟著睡眠暫停，開蓋繼續。背景 subagent 等它自己開的指令時還是 `busy`，照常算
+- `busy` 中連續 30 分鐘沒有任何寫入的工作會被當成卡住：不印輸出的長指令、很久沒回的 MCP 呼叫
 - `/loop` 這類等一段時間再繼續的 session，等的期間是 `idle`，10 分鐘後就睡，開蓋醒來才繼續
 - Claude 桌面版、在 VM 裡跑的 session 沒查會不會寫這個狀態簿
 - 被強制結束的 session 會留下登記檔，靠「pid 還在」排除；pid 剛好被別的程序重用時會誤判，機率很低
@@ -162,6 +176,7 @@ git -C ~/.hammerspoon/lid-coffee pull
 | `LID_HOUR_CHOICES` | `{ 0.5, 1, 2, 3, 4, 6, 8, 12 }` | 選單可選的上限時數 |
 | `LID_DEFAULT` | `LID_CLAUDE` | 沒選過時的上限，也是自動睡眠後開蓋切回的上限；改成數字就是那個時數 |
 | `LID_CLAUDE_IDLE_MINUTES` | `10` | 智慧感應：闔著時連續多久沒有 session 在跑就睡 |
+| `LID_CLAUDE_STALE_MINUTES` | `30` | 智慧感應：`busy` 的 session 連續多久沒寫入（transcript、背景指令輸出）就當成卡住，不算在跑 |
 | `LID_POLL_SECONDS` | `30` | 多久查一次蓋子，也是闔上到鎖定、螢幕熄掉最多多久。自動睡眠沒睡成時也隔這麼久重試；送出到睡著約 30 秒，改短會在睡著前重複送 |
 
 熱鍵在 `hs.hotkey.bind({"cmd", "ctrl"}, "l", ...)` 那行改。
@@ -178,7 +193,7 @@ defaults read org.hammerspoon.Hammerspoon lidMaxHours
 
 ```bash
 pmset -g | grep SleepDisabled                    # 1 = ☕；從沒設過時這行不會出現
-cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、之後開蓋切回 ☕、計時器出錯、狀態簿讀不到或有 claude 程序沒登記時寫
+cat ~/.hammerspoon/lid-timeout.log               # 只在自動睡眠、之後開蓋切回 ☕、計時器出錯、狀態簿讀不到、有 claude 程序沒登記、session 卡住或找不到 transcript 時寫
 pmset -g log | grep 'Entering Sleep' | tail -3   # 一次要跑幾秒
 ```
 
